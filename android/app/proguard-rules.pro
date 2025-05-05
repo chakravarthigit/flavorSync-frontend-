@@ -8,3 +8,11 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# Resolve duplicate classes issue
+-dontwarn android.support.v4.**
+-dontwarn com.android.support.**
+-keep class androidx.** { *; }
+-keep interface androidx.** { *; }
+-keep class android.support.v4.** { *; }
+-keep interface android.support.v4.** { *; }

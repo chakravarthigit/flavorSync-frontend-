@@ -1,0 +1,2279 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  FlatList,
+  Dimensions,
+  StatusBar,
+  Platform,
+  SafeAreaView,
+  Alert,
+  PermissionsAndroid,
+  Modal,
+  Linking,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSequence,
+  withSpring,
+  withDelay,
+  withRepeat,
+  Easing,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
+import LinearGradient from 'react-native-linear-gradient';
+import { useColorScheme } from 'react-native';
+import ImagePicker from '../components/ImagePicker';
+import Chatbot from '../components/Chatbot';
+import Loader from '../components/Loader';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Geolocation from 'react-native-geolocation-service';
+
+const { width, height } = Dimensions.get('window');
+const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+const HomeScreen = ({ route }) => {
+  const navigation = useNavigation();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [username, setUsername] = useState('Guest');
+  const [cartItems, setCartItems] = useState(2);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  const [userAvatar, setUserAvatar] = useState({ uri: 'https://randomuser.me/api/portraits/men/36.jpg' });
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [showChatbot, setShowChatbot] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userLocation, setUserLocation] = useState(null);
+  const [nearbyRestaurants, setNearbyRestaurants] = useState([]);
+  const [topPicksData, setTopPicksData] = useState([]);
+  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
+  const [permissionDeniedPermanently, setPermissionDeniedPermanently] = useState(false);
+  
+  // Dummy data
+  const bannerData = [
+    { id: '1', image: { uri: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&auto=format&fit=crop' } },
+    { id: '2', image: { uri: 'https://images.unsplash.com/photo-1505253758473-96b7015fcd40?w=800&auto=format&fit=crop' } },
+    { id: '3', image: { uri: 'https://images.unsplash.com/photo-1596797038534-2316ff3a585d?w=800&auto=format&fit=crop' } },
+  ];
+  
+  const trendingDishesData = [
+    { id: '1', name: 'Hyderabad Biryani', image: 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=500&auto=format&fit=crop', rating: 4.9, restaurant: 'Biryani House', price: '₹250' },
+    { id: '2', name: 'Butter Chicken', image: 'https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=500&auto=format&fit=crop', rating: 4.7, restaurant: 'Punjab Grill', price: '₹320' },
+    { id: '3', name: 'Masala Dosa', image: 'https://images.unsplash.com/photo-1589289669012-92f65fe84905?w=500&auto=format&fit=crop', rating: 4.8, restaurant: 'South Express', price: '₹120' },
+    { id: '4', name: 'Chole Bhature', image: 'https://images.unsplash.com/photo-1626777552726-4dca0479625f?w=500&auto=format&fit=crop', rating: 4.6, restaurant: 'Delhi Darbar', price: '₹180' },
+    { id: '5', name: 'Chicken Biryani', image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop', rating: 4.8, restaurant: 'Spice Hub', price: '₹300' },
+  ];
+  
+  const categories = [
+    { id: '1', name: 'Biryani', icon: '🍛' },
+    { id: '2', name: 'Chaat', icon: '🍢' },
+    { id: '3', name: 'Thali', icon: '🍛' },
+    { id: '4', name: 'Curry', icon: '🥘' },
+    { id: '5', name: 'Indian Breads', icon: '🍞' },
+    { id: '6', name: 'Sweets', icon: '🍮' },
+  ];
+  
+  const featuredRestaurantsData = [
+    { id: '1', name: 'Royal Mughal', image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=500&auto=format&fit=crop', rating: 4.7, cuisine: 'North Indian', priceRange: '₹₹₹' },
+    { id: '2', name: 'Spice Garden', image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=500&auto=format&fit=crop', rating: 4.6, cuisine: 'Multi Cuisine', priceRange: '₹₹' },
+    { id: '3', name: 'South Delight', image: 'https://images.unsplash.com/photo-1552566626-52f8b828add9?w=500&auto=format&fit=crop', rating: 4.8, cuisine: 'South Indian', priceRange: '₹₹' },
+  ];
+  
+  const notificationsData = [
+    { id: '1', title: '50% OFF on your first order', description: 'Use code WELCOME50', color: '#FFB74D' },
+    { id: '2', title: 'Free delivery all weekend!', description: 'No minimum order value', color: '#4CAF50' },
+  ];
+  
+  // Animation values
+  const scrollY = useSharedValue(0);
+  const headerOpacity = useSharedValue(1);
+  const bannerIndex = useSharedValue(0);
+  const gradientColors = useSharedValue(0);
+  const searchBarTranslateY = useSharedValue(-50);
+  const heroTranslateY = useSharedValue(50);
+  const categoriesTranslateX = useSharedValue(-width);
+  const topPicksOpacity = useSharedValue(0);
+  const trendingDishesTranslateX = useSharedValue(width);
+  const aiSuggestionScale = useSharedValue(0.8);
+  const notificationsScale = useSharedValue(0.8);
+  const featuredRestaurantsOpacity = useSharedValue(0);
+  const notificationsTranslateY = useSharedValue(50);
+  
+  // Add animation values for mic animation
+  const micWave1 = useSharedValue(0);
+  const micWave2 = useSharedValue(0);
+  const micWave3 = useSharedValue(0);
+  const micScale = useSharedValue(1);
+  
+  // Refs
+  const scrollViewRef = useRef(null);
+  const bannerFlatListRef = useRef(null);
+  const bannerInterval = useRef(null);
+  
+  // Add the following functions after the state variables but before the useEffect
+  // Function to check and request location permission with better handling
+  const checkAndRequestLocationPermission = async () => {
+    try {
+      // Check if permission is already granted
+      let hasPermission = false;
+      
+      if (Platform.OS === 'ios') {
+        const status = await Geolocation.requestAuthorization('whenInUse');
+        hasPermission = status === 'granted';
+      } else {
+        const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        hasPermission = granted;
+      }
+      
+      if (hasPermission) {
+        // Already has permission
+        return true;
+      } else {
+        // Show custom permission dialog first
+        setShowPermissionDialog(true);
+        return false;
+      }
+    } catch (err) {
+      console.error("Error checking location permission:", err);
+      return false;
+    }
+  };
+  
+  // Function to request location permission after user agrees in custom dialog
+  const requestLocationPermission = async () => {
+    try {
+      let hasPermission = false;
+      
+      if (Platform.OS === 'ios') {
+        const status = await Geolocation.requestAuthorization('whenInUse');
+        hasPermission = status === 'granted';
+      } else {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: "FlavorSync Location Permission",
+            message: "FlavorSync needs access to your location to show restaurants near you",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        
+        hasPermission = granted === PermissionsAndroid.RESULTS.GRANTED;
+        
+        // Check if user denied permanently
+        if (!hasPermission && granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+          setPermissionDeniedPermanently(true);
+        }
+      }
+      
+      setShowPermissionDialog(false);
+      return hasPermission;
+    } catch (err) {
+      console.error("Error requesting location permission:", err);
+      setShowPermissionDialog(false);
+      return false;
+    }
+  };
+  
+  // Function to open app settings
+  const openSettings = () => {
+    setShowPermissionDialog(false);
+    Linking.openSettings();
+  };
+  
+  // Function to get current position
+  const getCurrentPosition = () => {
+    return new Promise((resolve, reject) => {
+      Geolocation.getCurrentPosition(
+        position => resolve(position),
+        error => reject(error),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      );
+    });
+  };
+  
+  // Function to fetch nearby restaurants from API
+  const fetchNearbyRestaurants = async (latitude, longitude) => {
+    try {
+      const apiEndpoints = [
+        `http://192.168.55.104:5000/api/restaurants/nearby?latitude=${latitude}&longitude=${longitude}`,
+        `http://10.0.2.2:5000/api/restaurants/nearby?latitude=${latitude}&longitude=${longitude}`,
+        `http://localhost:5000/api/restaurants/nearby?latitude=${latitude}&longitude=${longitude}`
+      ];
+      
+      let response = null;
+      let error = null;
+      
+      // Try each endpoint
+      for (const endpoint of apiEndpoints) {
+        try {
+          console.log(`Trying to fetch from: ${endpoint}`);
+          response = await fetch(endpoint);
+          if (response.ok) {
+            console.log(`Successfully connected to ${endpoint}`);
+            break;
+          }
+        } catch (err) {
+          console.log(`Failed to connect to ${endpoint}:`, err.message);
+          error = err;
+        }
+      }
+      
+      if (!response || !response.ok) {
+        throw error || new Error('Failed to connect to any endpoint');
+      }
+      
+      const data = await response.json();
+      console.log(`Found ${data.length} nearby restaurants`);
+      return data;
+    } catch (error) {
+      console.error('Error fetching nearby restaurants:', error);
+      throw error;
+    }
+  };
+  
+  useEffect(() => {
+    // Start by hiding the loading indicator
+    setIsLoading(false);
+    
+    // Get user location and fetch nearby restaurants
+    const getLocationAndFetchRestaurants = async () => {
+      try {
+        // Check if permission is already granted first
+        let hasPermission = false;
+        
+        if (Platform.OS === 'ios') {
+          const status = await Geolocation.requestAuthorization('whenInUse');
+          hasPermission = status === 'granted';
+        } else {
+          const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+          hasPermission = granted;
+        }
+        
+        if (hasPermission) {
+          try {
+            // Get current position
+            const position = await getCurrentPosition();
+            const { latitude, longitude } = position.coords;
+            
+            console.log(`Got user location: ${latitude}, ${longitude}`);
+            setUserLocation({ latitude, longitude });
+            
+            // Fetch nearby restaurants using the coordinates
+            const restaurants = await fetchNearbyRestaurants(latitude, longitude);
+            setNearbyRestaurants(restaurants);
+            setTopPicksData(restaurants);
+          } catch (locationError) {
+            console.error('Error getting location:', locationError);
+            
+            // Fallback to mock location (Hyderabad)
+            const mockLocation = {
+              latitude: 17.3850,
+              longitude: 78.4867
+            };
+            
+            setUserLocation(mockLocation);
+            
+            // Use hardcoded mock data as ultimate fallback
+            const nearbyRestaurantsMock = getMockRestaurants();
+            setNearbyRestaurants(nearbyRestaurantsMock);
+            setTopPicksData(nearbyRestaurantsMock);
+          }
+        } else {
+          // Show custom permission dialog
+          setShowPermissionDialog(true);
+          
+          // Use mock data in the meantime
+          const nearbyRestaurantsMock = getMockRestaurants();
+          setNearbyRestaurants(nearbyRestaurantsMock);
+          setTopPicksData(nearbyRestaurantsMock);
+        }
+      } catch (error) {
+        console.error('Error in location and restaurant flow:', error);
+        
+        // Ultimate fallback
+        const nearbyRestaurantsMock = getMockRestaurants();
+        setNearbyRestaurants(nearbyRestaurantsMock);
+        setTopPicksData(nearbyRestaurantsMock);
+      }
+    };
+    
+    // Initialize animations
+    searchBarTranslateY.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.exp) });
+    heroTranslateY.value = withTiming(0, { duration: 600, easing: Easing.out(Easing.exp) });
+    categoriesTranslateX.value = withDelay(200, withTiming(0, { duration: 600, easing: Easing.out(Easing.exp) }));
+    topPicksOpacity.value = withDelay(300, withTiming(1, { duration: 600 }));
+    trendingDishesTranslateX.value = withDelay(400, withTiming(0, { duration: 600, easing: Easing.out(Easing.exp) }));
+    aiSuggestionScale.value = withDelay(500, withTiming(1, { duration: 600, easing: Easing.elastic(1.2) }));
+    notificationsScale.value = withDelay(600, withTiming(1, { duration: 600, easing: Easing.elastic(1.2) }));
+    featuredRestaurantsOpacity.value = withDelay(700, withTiming(1, { duration: 600 }));
+    notificationsTranslateY.value = withDelay(800, withTiming(0, { duration: 600, easing: Easing.out(Easing.exp) }));
+    
+    // Start banner auto-slide
+    startBannerAutoSlide();
+    
+    // Gradient animation
+    startGradientAnimation();
+    
+    // Get username from navigation params or AsyncStorage
+    const getUserData = async () => {
+      try {
+        // First check if username is passed as a route parameter
+        if (route?.params?.username) {
+          setUsername(route.params.username);
+        } else {
+          // Otherwise, try to get it from AsyncStorage
+          const storedUsername = await AsyncStorage.getItem('userName');
+          if (storedUsername) {
+            setUsername(storedUsername);
+          }
+        }
+      } catch (error) {
+        console.error('Error getting user data:', error);
+      }
+    };
+
+    getUserData();
+    
+    // Execute the location and restaurant fetching
+    getLocationAndFetchRestaurants();
+    
+    return () => {
+      // Clean up animations
+      if (bannerInterval.current) {
+        clearInterval(bannerInterval.current);
+      }
+    };
+  }, []);
+  
+  // Add this helper function to get mock restaurants with reliable images
+  const getMockRestaurants = () => {
+    return [
+      { 
+        id: '1', 
+        name: 'Delhi Darbar', 
+        image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=2070&auto=format&fit=crop', 
+        rating: 4.8, 
+        distance: '1.2 km', 
+        cuisine: 'North Indian',
+        priceRange: '₹₹' 
+      },
+      { 
+        id: '2', 
+        name: 'Andhra Spice', 
+        image: 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=80&w=1974&auto=format&fit=crop', 
+        rating: 4.6, 
+        distance: '0.8 km', 
+        cuisine: 'South Indian',
+        priceRange: '₹₹' 
+      },
+      { 
+        id: '3', 
+        name: 'Punjab Grill', 
+        image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?q=80&w=1974&auto=format&fit=crop', 
+        rating: 4.9, 
+        distance: '2.1 km', 
+        cuisine: 'Punjabi',
+        priceRange: '₹₹₹' 
+      },
+      { 
+        id: '4', 
+        name: 'Royal Thali', 
+        image: 'https://images.unsplash.com/photo-1552566626-52f8b828add9?q=80&w=2070&auto=format&fit=crop', 
+        rating: 4.7, 
+        distance: '1.5 km', 
+        cuisine: 'Indian',
+        priceRange: '₹₹' 
+      },
+    ];
+  };
+  
+  const startGradientAnimation = () => {
+    gradientColors.value = withRepeat(
+      withTiming(1, { duration: 5000 }),
+      -1, // Infinite repetitions
+      true // Reverse on each iteration
+    );
+  };
+  
+  const startBannerAutoSlide = () => {
+    bannerInterval.current = setInterval(() => {
+      const nextIndex = (bannerIndex.value + 1) % bannerData.length;
+      bannerIndex.value = withTiming(nextIndex, { duration: 400 });
+      
+      if (bannerFlatListRef.current) {
+        bannerFlatListRef.current.scrollToIndex({
+          index: nextIndex,
+          animated: true,
+        });
+      }
+    }, 4000);
+  };
+  
+  const handleSearch = (text) => {
+    setSearchQuery(text);
+    if (text.length > 0) {
+      // Filter suggestions based on input
+      const filteredSuggestions = [
+        'Pizza', 'Burgers', 'Chinese Food', 'Italian', 'Sushi',
+        'Mexican', 'Thai Food', 'Indian Cuisine', 'Vegetarian'
+      ].filter(item => item.toLowerCase().includes(text.toLowerCase()));
+      setSuggestions(filteredSuggestions);
+      setShowSuggestions(true);
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+  
+  const handleSuggestionPress = (suggestion) => {
+    setSearchQuery(suggestion);
+    setShowSuggestions(false);
+    // Search for this suggestion
+    // You can implement actual search functionality here
+    console.log(`Searching for: ${suggestion}`);
+  };
+
+  const handleScroll = (event) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    scrollY.value = offsetY;
+    
+    // Hide header on scroll
+    if (offsetY > 50) {
+      headerOpacity.value = withTiming(0, { duration: 200 });
+    } else {
+      headerOpacity.value = withTiming(1, { duration: 200 });
+    }
+  };
+  
+  // Animated styles
+  const headerAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: headerOpacity.value,
+      transform: [
+        { translateY: interpolate(headerOpacity.value, [0, 1], [-20, 0]) }
+      ]
+    };
+  });
+  
+  const searchBarAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateY: searchBarTranslateY.value }
+      ]
+    };
+  });
+  
+  const heroAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateY: heroTranslateY.value }
+      ]
+    };
+  });
+  
+  const gradientAnimatedStyle = useAnimatedStyle(() => {
+    const color1 = interpolate(gradientColors.value, [0, 1], [255, 245]);
+    const color2 = interpolate(gradientColors.value, [0, 1], [165, 140]);
+    const color3 = interpolate(gradientColors.value, [0, 1], [0, 35]);
+    
+    return {
+      backgroundColor: `rgb(${color1}, ${color2}, ${color3})`,
+    };
+  });
+  
+  const categoriesAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: categoriesTranslateX.value }
+      ]
+    };
+  });
+  
+  const topPicksAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: topPicksOpacity.value,
+      transform: [
+        { translateY: interpolate(topPicksOpacity.value, [0, 1], [30, 0]) }
+      ]
+    };
+  });
+  
+  const trendingDishesAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: trendingDishesTranslateX.value }
+      ]
+    };
+  });
+  
+  const aiSuggestionAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { scale: aiSuggestionScale.value }
+      ]
+    };
+  });
+  
+  const featuredRestaurantsAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: featuredRestaurantsOpacity.value,
+      transform: [
+        { translateY: interpolate(featuredRestaurantsOpacity.value, [0, 1], [20, 0]) }
+      ]
+    };
+  });
+  
+  const notificationsAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateY: notificationsTranslateY.value }
+      ]
+    };
+  });
+  
+  // UI Renderers
+  const renderBannerItem = ({ item }) => (
+    <View style={styles.bannerItemContainer}>
+      <Image
+        source={item.image}
+        style={styles.bannerImage}
+        resizeMode="cover"
+        onError={(e) => console.log('Banner image error:', e.nativeEvent.error)}
+      />
+      <View style={styles.bannerTextContainer}>
+        <Text style={styles.bannerTitle}>{item.title}</Text>
+      </View>
+    </View>
+  );
+  
+  const renderCategoryItem = ({ item }) => (
+    <TouchableOpacity style={styles.categoryItem}>
+      <View style={[styles.categoryIconContainer, {backgroundColor: isDarkMode ? '#333' : '#FFF5E6'}]}>
+        <Text style={styles.categoryIcon}>{item.icon}</Text>
+      </View>
+      <Text style={[styles.categoryName, {color: theme.textColor}]}>{item.name}</Text>
+    </TouchableOpacity>
+  );
+  
+  const renderRestaurantItem = ({ item }) => (
+    <TouchableOpacity 
+      style={[styles.restaurantCard, {backgroundColor: theme.cardBackgroundColor}]}
+      onPress={() => navigation.navigate('Restaurant', { name: item.name })}
+    >
+      <Image 
+        source={{ uri: item.image }} 
+        style={styles.restaurantImage} 
+        onError={(e) => console.log('Restaurant image error:', e.nativeEvent.error)}
+      />
+      <View style={styles.restaurantInfo}>
+        <Text style={[styles.restaurantName, {color: theme.textColor}]}>{item.name}</Text>
+        <View style={styles.restaurantMeta}>
+          <View style={styles.ratingContainer}>
+            <Text style={styles.ratingIcon}>⭐</Text>
+            <Text style={[styles.ratingText, {color: theme.textColor}]}>{item.rating}</Text>
+          </View>
+          <Text style={[styles.cuisineText, {color: theme.secondaryTextColor}]}>{item.cuisine}</Text>
+        </View>
+        <Text style={[styles.priceRangeText, {color: theme.priceColor}]}>{item.priceRange}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+  
+  const renderTrendingDishItem = ({ item }) => (
+    <TouchableOpacity style={[styles.dishCard, {backgroundColor: theme.cardBackgroundColor}]}>
+      <Image 
+        source={{ uri: item.image }} 
+        style={styles.dishImage}
+        onError={(e) => console.log('Image loading error:', e.nativeEvent.error)}
+      />
+      <View style={styles.dishOverlay}>
+        <View style={styles.dishRating}>
+          <Text style={[styles.dishRatingText, {color: '#ffffff'}]}>{item.rating} <Text style={{color: theme.ratingStarColor}}>⭐</Text></Text>
+        </View>
+      </View>
+      <View style={styles.dishInfo}>
+        <Text style={[styles.dishName, {color: theme.textColor}]}>{item.name}</Text>
+        <View style={styles.dishMeta}>
+          <Text style={[styles.dishRestaurant, {color: theme.secondaryTextColor}]}>{item.restaurant}</Text>
+          <Text style={[styles.dishPrice, {color: theme.priceColor}]}>{item.price}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+  
+  const renderFeaturedRestaurantItem = ({ item }) => (
+    <TouchableOpacity 
+      style={[styles.featuredRestaurantCard, {backgroundColor: theme.cardBackgroundColor}]}
+      onPress={() => navigation.navigate('Restaurant', { name: item.name })}
+    >
+      <Image 
+        source={{ uri: item.image }} 
+        style={styles.featuredRestaurantImage}
+        onError={(e) => console.log('Image loading error:', e.nativeEvent.error)}
+      />
+      <View style={styles.featuredRestaurantOverlay}>
+        <View style={styles.featuredRestaurantRating}>
+          <Text style={styles.featuredRestaurantRatingText}>{item.rating} <Text style={{color: theme.ratingStarColor}}>⭐</Text></Text>
+        </View>
+      </View>
+      <View style={styles.featuredRestaurantInfo}>
+        <Text style={[styles.featuredRestaurantName, {color: theme.textColor}]}>{item.name}</Text>
+        <View style={styles.featuredRestaurantMeta}>
+          <Text style={[styles.featuredRestaurantCuisine, {color: theme.secondaryTextColor}]}>{item.cuisine}</Text>
+          <Text style={[styles.featuredRestaurantPrice, {color: theme.priceColor}]}>{item.priceRange}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+  
+  const renderNotificationItem = ({ item, index }) => (
+    <Animated.View
+      style={[
+        styles.notificationCard,
+        {
+          backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : `${item.color}20`,
+          borderLeftColor: item.color,
+        },
+      ]}
+    >
+      <View style={styles.notificationContent}>
+        <Text style={[styles.notificationTitle, {color: theme.textColor}]}>{item.title}</Text>
+        <Text style={[styles.notificationDescription, {color: theme.secondaryTextColor}]}>{item.description}</Text>
+      </View>
+    </Animated.View>
+  );
+
+  // Theme-based styles
+  const theme = useMemo(() => {
+    if (isDarkMode) {
+      return {
+        backgroundColor: '#0D0D0D', // Cyber Black Matte
+        textColor: '#FFFFFF', // Main text
+        sectionTitleColor: '#FFFFFF', // Main text
+        cardBackgroundColor: '#1F1F1F', // Card backgrounds
+        inputBackgroundColor: '#1F1F1F', // Card backgrounds
+        themeToggleButtonBackground: 'rgba(255, 107, 0, 0.2)', // Neon Orange with transparency
+        themeToggleShadowColor: '#FF6B00', // Neon Orange AI Glow
+        headerTextColor: '#FFFFFF', // Main text
+        headerSubTextColor: '#A0A0A0', // Subtext
+        seeAllTextColor: '#00E7FF', // Electric Blue Holograph
+        seeAllButtonColor: 'rgba(255, 107, 0, 0.2)', // Neon Orange with transparency
+        secondaryTextColor: '#A0A0A0', // Subtext
+        priceColor: '#FF6B00', // Neon Orange AI Glow
+        ratingStarColor: '#FF6B00', // Neon Orange AI Glow
+        placeholderTextColor: '#A0A0A0', // Subtext
+        buttonColor: '#FF6B00', // Neon Orange AI Glow
+      };
+    } else {
+      return {
+        backgroundColor: '#F8F8F8', // Light background
+        textColor: '#333333', // Dark text for light mode
+        sectionTitleColor: '#333333', // Dark text for light mode
+        cardBackgroundColor: '#FFFFFF', // White cards
+        inputBackgroundColor: '#FFFFFF', // White input
+        themeToggleButtonBackground: 'rgba(255, 107, 0, 0.1)', // Lighter orange
+        themeToggleShadowColor: '#FF8A00', // Orange shadow
+        headerTextColor: '#333333', // Dark text for light mode
+        headerSubTextColor: '#777777', // Darker subtext
+        seeAllTextColor: '#0077B6', // Blue for light mode
+        seeAllButtonColor: 'rgba(255, 138, 0, 0.1)', // Lighter orange
+        secondaryTextColor: '#777777', // Darker subtext
+        priceColor: '#FF8A00', // Orange
+        ratingStarColor: '#FFB700', // Gold star
+        placeholderTextColor: '#AAAAAA', // Light grey
+        buttonColor: '#FF8A00', // Orange
+      };
+    }
+  }, [isDarkMode]);
+  
+  // Toggle theme function
+  const toggleTheme = () => {
+    setIsDarkMode(prevMode => !prevMode);
+  };
+
+  // Handle voice search
+  const startVoiceSearch = () => {
+    setIsListening(true);
+    
+    // Start mic animation
+    micWave1.value = 0;
+    micWave2.value = 0;
+    micWave3.value = 0;
+    micScale.value = 1;
+    
+    // Animate the mic waves
+    micWave1.value = withRepeat(
+      withTiming(1, { duration: 1500, easing: Easing.ease }),
+      -1, // Infinite repeats
+      false
+    );
+    
+    micWave2.value = withDelay(300, withRepeat(
+      withTiming(1, { duration: 1500, easing: Easing.ease }),
+      -1,
+      false
+    ));
+    
+    micWave3.value = withDelay(600, withRepeat(
+      withTiming(1, { duration: 1500, easing: Easing.ease }),
+      -1,
+      false
+    ));
+    
+    // Pulse the mic
+    micScale.value = withRepeat(
+      withSequence(
+        withTiming(1.2, { duration: 800, easing: Easing.ease }),
+        withTiming(1, { duration: 800, easing: Easing.ease })
+      ),
+      -1,
+      false
+    );
+    
+    // Simulate voice recognition (in a real app, you'd use a library like react-native-voice)
+    setTimeout(() => {
+      // Simulate getting voice results after 2 seconds
+      setTimeout(() => {
+        // Always return "Biryani near me" for demo purposes
+        const voiceResult = "Biryani near me";
+        
+        // Update search query with voice result
+        setSearchQuery(voiceResult);
+        setIsListening(false);
+        
+        // Show suggestions based on voice input
+        const fakeSuggestions = [
+          'Biryani near me',
+          'Best Biryani in Hyderabad',
+          'Hyderabadi Biryani restaurants',
+          'Chicken Biryani delivery',
+          'Dum Biryani places',
+        ];
+        
+        setSuggestions(fakeSuggestions);
+        setShowSuggestions(true);
+      }, 3000);
+    }, 100);
+  };
+  
+  // Stop voice search
+  const stopVoiceSearch = () => {
+    setIsListening(false);
+  };
+  
+  // Animated styles for microphone waves
+  const micWave1Style = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: interpolate(micWave1.value, [0, 1], [1, 2]) }],
+      opacity: interpolate(micWave1.value, [0, 0.5, 1], [0.6, 0.2, 0])
+    };
+  });
+  
+  const micWave2Style = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: interpolate(micWave2.value, [0, 1], [1, 2]) }],
+      opacity: interpolate(micWave2.value, [0, 0.5, 1], [0.5, 0.2, 0])
+    };
+  });
+  
+  const micWave3Style = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: interpolate(micWave3.value, [0, 1], [1, 2]) }],
+      opacity: interpolate(micWave3.value, [0, 0.5, 1], [0.4, 0.2, 0])
+    };
+  });
+  
+  const micScaleStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: micScale.value }]
+    };
+  });
+
+  // Handle image selection
+  const handleImageSelected = (uri) => {
+    setUserAvatar({ uri });
+    setShowImagePicker(false);
+  };
+
+  // Effect to update status bar style when theme changes
+  useEffect(() => {
+    StatusBar.setBarStyle(isDarkMode ? 'light-content' : 'dark-content');
+    if (Platform.OS === 'android') {
+      StatusBar.setBackgroundColor('transparent');
+      StatusBar.setTranslucent(true);
+    }
+  }, [isDarkMode]);
+
+  // Update renderPermissionDialog to make it more usable
+  const renderPermissionDialog = () => {
+    return (
+      <Modal
+        transparent
+        visible={showPermissionDialog}
+        animationType="fade"
+        onRequestClose={() => setShowPermissionDialog(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowPermissionDialog(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1} 
+            onPress={(e) => e.stopPropagation()}
+            style={[
+              styles.permissionDialog, 
+              {backgroundColor: isDarkMode ? '#1F1F1F' : '#FFFFFF'}
+            ]}
+          >
+            <View style={styles.permissionIconContainer}>
+              <View style={[
+                styles.permissionIconCircle,
+                {backgroundColor: isDarkMode ? 'rgba(255, 107, 0, 0.2)' : 'rgba(255, 138, 0, 0.1)'}
+              ]}>
+                <Text style={styles.permissionIcon}>📍</Text>
+              </View>
+            </View>
+            
+            <Text style={[
+              styles.permissionTitle, 
+              {color: theme.textColor}
+            ]}>
+              Enable Location Services
+            </Text>
+            
+            <Text style={[
+              styles.permissionDescription, 
+              {color: theme.secondaryTextColor}
+            ]}>
+              FlavorSync needs your location to find the best restaurants near you. 
+              Your location data is only used within the app.
+            </Text>
+            
+            {permissionDeniedPermanently ? (
+              <>
+                <Text style={[
+                  styles.permissionSecondary,
+                  {color: theme.secondaryTextColor, marginTop: 10}
+                ]}>
+                  You've denied location permission permanently. Please enable it in your device settings.
+                </Text>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.permissionButton,
+                    {backgroundColor: theme.buttonColor}
+                  ]}
+                  onPress={openSettings}
+                >
+                  <Text style={styles.permissionButtonText}>Open Settings</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.permissionSecondaryButton}
+                  onPress={() => setShowPermissionDialog(false)}
+                >
+                  <Text style={[
+                    styles.permissionSecondaryButtonText,
+                    {color: theme.secondaryTextColor}
+                  ]}>
+                    Not Now
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.permissionButton,
+                    {backgroundColor: theme.buttonColor}
+                  ]}
+                  onPress={requestLocationPermission}
+                >
+                  <Text style={styles.permissionButtonText}>Grant Permission</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.permissionSecondaryButton}
+                  onPress={() => setShowPermissionDialog(false)}
+                >
+                  <Text style={[
+                    styles.permissionSecondaryButtonText,
+                    {color: theme.secondaryTextColor}
+                  ]}>
+                    Maybe Later
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    );
+  };
+  
+  // Fixed render for banner indicators with proper keys
+  const renderBannerIndicators = () => (
+    <View style={styles.indicatorContainer}>
+      {bannerData.map((_, index) => (
+        <View
+          key={`indicator-${index}`}
+          style={[
+            styles.indicator,
+            { 
+              opacity: index === Math.round(bannerIndex.value) ? 1 : 0.5,
+              backgroundColor: isDarkMode ? '#fff' : '#FF8A00' 
+            }
+          ]}
+        />
+      ))}
+    </View>
+  );
+
+  // Fixed renderNotificationItem with proper keys
+  const renderNotifications = () => (
+    <Animated.View style={[styles.sectionContainer, notificationsAnimatedStyle]}>
+      <Text style={[styles.sectionTitle, {color: theme.sectionTitleColor}]}>Notifications & Offers</Text>
+      
+      {notificationsData.map((item, index) => (
+        <Animated.View
+          key={`notification-${item.id}`}
+          style={[
+            styles.notificationCard,
+            {
+              backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : `${item.color}20`,
+              borderLeftColor: item.color,
+            },
+          ]}
+        >
+          <View style={styles.notificationContent}>
+            <Text style={[styles.notificationTitle, {color: theme.textColor}]}>{item.title}</Text>
+            <Text style={[styles.notificationDescription, {color: theme.secondaryTextColor}]}>{item.description}</Text>
+          </View>
+        </Animated.View>
+      ))}
+    </Animated.View>
+  );
+
+  // Fix suggestions function
+  const renderSuggestions = () => {
+    if (!showSuggestions) return null;
+    
+    return (
+      <View style={[styles.suggestionsContainer, {backgroundColor: theme.cardBackgroundColor}]}>
+        {suggestions.map((suggestion, index) => (
+          <TouchableOpacity
+            key={`suggestion-${index}`}
+            style={styles.suggestionItem}
+            onPress={() => handleSuggestionPress(suggestion)}
+          >
+            <Text style={styles.suggestionIcon}>🕒</Text>
+            <Text style={[styles.suggestionText, {color: theme.textColor}]}>{suggestion}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  // Fix the reference to renderMapPreview which is also mentioned in the error
+  const renderMapPreview = () => {
+    return (
+      <TouchableOpacity style={styles.mapPreviewContainer}>
+        <Image 
+          source={{ uri: 'https://images.unsplash.com/photo-1569336415962-a4bd9f69c8bf?w=800&auto=format&fit=crop' }}
+          style={styles.mapPreview}
+          resizeMode="cover"
+        />
+        <View style={[styles.mapOverlay, { backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.7)' }]}>
+          <Text style={styles.mapOverlayText}>8 restaurants within 2 km</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Improved location services with better error handling
+  const getCurrentLocation = async () => {
+    try {
+      if (Platform.OS === 'ios') {
+        const authStatus = await Geolocation.requestAuthorization('whenInUse');
+        if (authStatus !== 'granted') {
+          console.log('Location permission denied by user');
+          setUserLocation(null);
+          return false;
+        }
+      } else {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Location Permission',
+            message: 'FlavorSync needs your location to find restaurants near you',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          console.log('Location permission denied by user');
+          setUserLocation(null);
+          return false;
+        }
+      }
+      
+      return new Promise((resolve, reject) => {
+        Geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            console.log(`Location obtained: ${latitude}, ${longitude}`);
+            setUserLocation({ latitude, longitude });
+            // Get nearby restaurants with the location
+            fetchNearbyRestaurants(latitude, longitude).then(restaurants => {
+              setNearbyRestaurants(restaurants);
+            }).catch(error => {
+              console.error('Error fetching restaurants:', error);
+              useMockRestaurants();
+            });
+            resolve(true);
+          },
+          (error) => {
+            console.log('Error getting location:', error);
+            setUserLocation(null);
+            useMockRestaurants();
+            reject(error);
+          },
+          { 
+            enableHighAccuracy: true, 
+            timeout: 15000, 
+            maximumAge: 10000 
+          }
+        );
+      });
+    } catch (error) {
+      console.log('Error in location permission:', error);
+      setUserLocation(null);
+      useMockRestaurants();
+      return false;
+    }
+  };
+
+  // Function to fetch nearby restaurants using the location
+  const fetchNearbyRestaurants = async (latitude, longitude) => {
+    try {
+      // Use Mock Data for now, replace with actual API call when ready
+      const mockRestaurants = [
+        {
+          id: '1',
+          name: 'Spice Garden',
+          cuisine: 'Indian',
+          rating: 4.8,
+          priceRange: '$$',
+          distance: '0.8 km',
+          imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop'
+        },
+        {
+          id: '2',
+          name: 'Pasta Paradise',
+          cuisine: 'Italian',
+          rating: 4.5,
+          priceRange: '$$$',
+          distance: '1.2 km',
+          imageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop'
+        },
+        {
+          id: '3',
+          name: 'Burger Bliss',
+          cuisine: 'American',
+          rating: 4.3,
+          priceRange: '$$',
+          distance: '1.5 km',
+          imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&auto=format&fit=crop'
+        },
+        {
+          id: '4',
+          name: 'Sushi Sensation',
+          cuisine: 'Japanese',
+          rating: 4.7,
+          priceRange: '$$$',
+          distance: '2.0 km',
+          imageUrl: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800&auto=format&fit=crop'
+        },
+      ];
+      
+      setNearbyRestaurants(mockRestaurants);
+      console.log('Loaded nearby restaurants data');
+    } catch (error) {
+      console.error('Error fetching restaurants:', error);
+      useMockRestaurants();
+    }
+  };
+
+  // Fallback to mock restaurants if location fails
+  const useMockRestaurants = () => {
+    console.log('Using mock restaurants data');
+    const mockRestaurants = [
+      {
+        id: '1',
+        name: 'Spice Garden',
+        cuisine: 'Indian',
+        rating: 4.8,
+        priceRange: '$$',
+        distance: '0.8 km',
+        imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&auto=format&fit=crop'
+      },
+      {
+        id: '2',
+        name: 'Pasta Paradise',
+        cuisine: 'Italian',
+        rating: 4.5,
+        priceRange: '$$$',
+        distance: '1.2 km',
+        imageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop'
+      },
+      {
+        id: '3',
+        name: 'Burger Bliss',
+        cuisine: 'American',
+        rating: 4.3,
+        priceRange: '$$',
+        distance: '1.5 km',
+        imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&auto=format&fit=crop'
+      },
+      {
+        id: '4',
+        name: 'Sushi Sensation',
+        cuisine: 'Japanese',
+        rating: 4.7,
+        priceRange: '$$$',
+        distance: '2.0 km',
+        imageUrl: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800&auto=format&fit=crop'
+      },
+    ];
+    
+    setNearbyRestaurants(mockRestaurants);
+  };
+
+  // Update useEffect to properly fetch location
+  useEffect(() => {
+    // Function to initialize the screen
+    const initializeScreen = async () => {
+      try {
+        // Initialize animations
+        initializeAnimations();
+        
+        // Fetch user data  
+        fetchUserData();
+        
+        // Hide loading after short delay (for aesthetic reasons)
+        setTimeout(() => {
+          setIsLoading(false);
+        }, 1000);
+        
+        // Get location after loading is done
+        setTimeout(async () => {
+          // Try to get location
+          const locationSuccess = await getCurrentLocation();
+          if (!locationSuccess) {
+            console.log('Location not available, using mock data');
+            useMockRestaurants();
+          }
+        }, 1500);
+      } catch (error) {
+        console.error('Error initializing screen:', error);
+        setIsLoading(false);
+        useMockRestaurants();
+      }
+    };
+    
+    initializeScreen();
+  }, []);
+
+  return (
+    <>
+      {isLoading ? (
+        <Loader />
+      ) : (
+        <>
+          <AnimatedLinearGradient
+            style={styles.container}
+            colors={
+              isDarkMode 
+              ? [
+                '#0D0D0D', // Cyber Black Matte
+                '#161616', // Slightly lighter black
+                '#1F1F1F', // Card backgrounds
+              ]
+              : [
+                '#F8F8F8', // Light background
+                '#F0F0F0', // Slightly darker
+                '#FFFFFF', // White
+              ]
+            }
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+          >
+            <StatusBar 
+              translucent 
+              backgroundColor="transparent" 
+              barStyle={isDarkMode ? "light-content" : "dark-content"} 
+            />
+            <SafeAreaView style={styles.safeArea}>
+              
+              {/* Header Section with user info */}
+              <Animated.View style={[styles.header, headerAnimatedStyle]}>
+                <View style={styles.headerContent}>
+                  <View style={styles.userInfo}>
+                    <TouchableOpacity onPress={() => setShowImagePicker(true)}>
+                      <Image
+                        source={userAvatar}
+                        style={styles.userAvatar}
+                        onError={(e) => console.log('User avatar image error:', e.nativeEvent.error)}
+                      />
+                    </TouchableOpacity>
+                    <View>
+                      <Text style={[styles.greeting, {color: theme.headerTextColor}]}>Welcome back,</Text>
+                      <Text style={[styles.usernameText, {color: theme.headerTextColor}]}>{username}</Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.headerRight}>
+                    <TouchableOpacity 
+                      style={[
+                        styles.themeToggleButton, 
+                        { 
+                          backgroundColor: theme.themeToggleButtonBackground,
+                          shadowColor: theme.themeToggleShadowColor 
+                        }
+                      ]} 
+                      onPress={toggleTheme}
+                    >
+                      <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </Animated.View>
+              
+              {/* Image Picker Modal */}
+              {showImagePicker && (
+                <View style={styles.imagePickerOverlay}>
+                  <View style={[styles.imagePickerContainer, {backgroundColor: theme.cardBackgroundColor}]}>
+                    <View style={styles.imagePickerHeader}>
+                      <Text style={[styles.imagePickerTitle, {color: theme.textColor}]}>Update Profile Picture</Text>
+                      <TouchableOpacity onPress={() => setShowImagePicker(false)}>
+                        <Text style={styles.imagePickerClose}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <ImagePicker 
+                      onImageSelected={handleImageSelected} 
+                      defaultImage={userAvatar.uri}
+                    />
+                  </View>
+                </View>
+              )}
+              
+              {/* Search Bar */}
+              <Animated.View style={[styles.searchContainer, searchBarAnimatedStyle]}>
+                <View style={[styles.searchBar, {backgroundColor: theme.inputBackgroundColor}]}>
+                  <Text style={styles.searchIcon}>🔍</Text>
+                  <TextInput
+                    style={[styles.searchInput, {color: theme.textColor}]}
+                    placeholder="Search for food, cuisine, restaurants..."
+                    placeholderTextColor={theme.placeholderTextColor}
+                    value={searchQuery}
+                    onChangeText={handleSearch}
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity 
+                      style={styles.clearButton}
+                      onPress={() => {
+                        setSearchQuery('');
+                        setShowSuggestions(false);
+                      }}
+                    >
+                      <Text style={styles.clearIcon}>✕</Text>
+                    </TouchableOpacity>
+                  )}
+                  
+                  <TouchableOpacity 
+                    style={[styles.voiceSearchButton, isListening && styles.voiceSearchButtonActive]} 
+                    onPress={isListening ? stopVoiceSearch : startVoiceSearch}
+                  >
+                    <Text style={[styles.voiceIcon, isListening && styles.voiceIconActive]}>🎤</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {/* Listening Animation Overlay */}
+                {isListening && (
+                  <View style={styles.listeningOverlay}>
+                    <TouchableOpacity 
+                      style={styles.listeningOverlayBackground}
+                      activeOpacity={1}
+                      onPress={stopVoiceSearch}
+                    />
+                    
+                    <View style={styles.listeningContainer}>
+                      <Animated.View style={[styles.micWave, micWave1Style]} />
+                      <Animated.View style={[styles.micWave, micWave2Style]} />
+                      <Animated.View style={[styles.micWave, micWave3Style]} />
+                      
+                      <Animated.View style={[styles.listeningMicContainer, micScaleStyle]}>
+                        <Text style={styles.listeningMicIcon}>🎤</Text>
+                      </Animated.View>
+                      
+                      <Text style={styles.listeningText}>Listening...</Text>
+                      <Text style={styles.listeningSubText}>Tap anywhere to cancel</Text>
+                    </View>
+                  </View>
+                )}
+                
+                {renderSuggestions()}
+              </Animated.View>
+              
+              {/* If user's location has been determined, display a message */}
+              {userLocation && (
+                <View style={[styles.locationBanner, {backgroundColor: isDarkMode ? 'rgba(255, 107, 0, 0.15)' : 'rgba(255, 138, 0, 0.08)'}]}>
+                  <Text style={[styles.locationText, {color: theme.textColor}]}>
+                    Showing restaurants near you
+                  </Text>
+                </View>
+              )}
+              
+              <ScrollView
+                ref={scrollViewRef}
+                style={styles.scrollView}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+              >
+                {/* Hero Banner / Carousel */}
+                <Animated.View style={[styles.bannerContainer, heroAnimatedStyle]}>
+                  <FlatList
+                    ref={bannerFlatListRef}
+                    data={bannerData}
+                    renderItem={renderBannerItem}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={item => item.id}
+                    onMomentumScrollEnd={(event) => {
+                      const newIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+                      bannerIndex.value = newIndex;
+                    }}
+                  />
+                  
+                  {/* Carousel Indicators */}
+                  {renderBannerIndicators()}
+                </Animated.View>
+                
+                {/* Quick Categories */}
+                <Animated.View style={[styles.sectionContainer, categoriesAnimatedStyle]}>
+                  <Text style={[styles.sectionTitle, {color: theme.sectionTitleColor}]}>Categories</Text>
+                  <FlatList
+                    data={categories}
+                    renderItem={renderCategoryItem}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={item => item.id}
+                    contentContainerStyle={styles.categoriesContainer}
+                  />
+                </Animated.View>
+                
+                {/* Top Picks Near You */}
+                <Animated.View style={[styles.sectionContainer, topPicksAnimatedStyle]}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, {color: theme.sectionTitleColor}]}>Top Picks Near You</Text>
+                    <TouchableOpacity style={[styles.seeAllButton, {backgroundColor: theme.seeAllButtonColor}]}>
+                      <Text style={[styles.seeAllText, {color: theme.seeAllTextColor}]}>See All</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <FlatList
+                    data={nearbyRestaurants}
+                    renderItem={renderRestaurantItem}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={item => item.id}
+                    contentContainerStyle={styles.topPicksContainer}
+                    decelerationRate="fast"
+                    snapToInterval={width * 0.75 + 12}
+                    snapToAlignment="center"
+                    pagingEnabled
+                  />
+                </Animated.View>
+                
+                {/* Trending & Popular Dishes */}
+                <Animated.View style={[styles.sectionContainer, trendingDishesAnimatedStyle]}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, {color: theme.sectionTitleColor}]}>Trending & Popular</Text>
+                    <TouchableOpacity style={[styles.seeAllButton, {backgroundColor: theme.seeAllButtonColor}]}>
+                      <Text style={[styles.seeAllText, {color: theme.seeAllTextColor}]}>See All</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <FlatList
+                    data={trendingDishesData}
+                    renderItem={renderTrendingDishItem}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={item => item.id}
+                    contentContainerStyle={styles.trendingDishesContainer}
+                  />
+                </Animated.View>
+                
+                {/* AI-Powered Food Suggestion */}
+                <Animated.View style={[styles.sectionContainer, aiSuggestionAnimatedStyle]}>
+                  <View style={styles.aiSuggestionCard}>
+                    <LinearGradient
+                      style={styles.aiSuggestionGradient}
+                      colors={['#6D00FF', '#00FFE0']} // Deep Purple to Turquoise gradient
+                      start={{x: 0, y: 0}}
+                      end={{x: 1, y: 1}}
+                    >
+                      <View style={styles.aiSuggestionContent}>
+                        <View style={styles.aiSuggestionLeft}>
+                          <Text style={styles.aiSuggestionTitle}>What are you craving?</Text>
+                          <Text style={styles.aiSuggestionSubtitle}>
+                            Our AI recommends Paneer Butter Masala for you today!
+                          </Text>
+                          <TouchableOpacity style={styles.aiSuggestionButton}>
+                            <Text style={[styles.aiSuggestionButtonText, {color: '#FF6B00'}]}>Find Near Me</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.aiSuggestionRight}>
+                          <Image
+                            source={{ uri: 'https://i.ibb.co/vCZ6bzCJ/cute-robot-hand-hello-gesture-600nw-2182043351.jpg' }}
+                            style={styles.aiSuggestionImage}
+                            onError={(e) => console.log('AI suggestion image error:', e.nativeEvent.error)}
+                          />
+                        </View>
+                      </View>
+                    </LinearGradient>
+                  </View>
+                </Animated.View>
+                
+                {/* Featured Restaurants */}
+                <Animated.View style={[styles.sectionContainer, featuredRestaurantsAnimatedStyle]}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, {color: theme.sectionTitleColor}]}>Featured Restaurants</Text>
+                    <TouchableOpacity style={[styles.seeAllButton, {backgroundColor: theme.seeAllButtonColor}]}>
+                      <Text style={[styles.seeAllText, {color: theme.seeAllTextColor}]}>See All</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <FlatList
+                    data={featuredRestaurantsData}
+                    renderItem={renderFeaturedRestaurantItem}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={item => item.id}
+                    contentContainerStyle={styles.featuredRestaurantsContainer}
+                  />
+                </Animated.View>
+                
+                {/* Notifications & Offers */}
+                {renderNotifications()}
+                
+                {/* Map Preview */}
+                <View style={styles.sectionContainer}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, {color: theme.sectionTitleColor}]}>Explore Nearby</Text>
+                    <TouchableOpacity style={[styles.seeAllButton, {backgroundColor: theme.seeAllButtonColor}]}>
+                      <Text style={[styles.seeAllText, {color: theme.seeAllTextColor}]}>Open Map</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {renderMapPreview()}
+                </View>
+                
+              </ScrollView>
+              
+              {/* Floating Action Button for adding restaurant */}
+              <TouchableOpacity 
+                style={[styles.floatingActionButton, {
+                  backgroundColor: theme.buttonColor || '#FF8A00',
+                  shadowColor: isDarkMode ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 138, 0, 0.5)',
+                }]}
+                onPress={() => setShowChatbot(true)}
+              >
+                <Text style={styles.fabIcon}>💬</Text>
+              </TouchableOpacity>
+              
+              {/* Chatbot Modal */}
+              {showChatbot && (
+                <Chatbot onClose={() => setShowChatbot(false)} />
+              )}
+              
+            </SafeAreaView>
+          </AnimatedLinearGradient>
+          
+          {/* Render the permission dialog */}
+          {renderPermissionDialog()}
+        </>
+      )}
+    </>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+  header: {
+    paddingTop: Platform.OS === 'android' ? 10 : 0,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  greeting: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  usernameText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  themeToggleButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  themeToggleIcon: {
+    fontSize: 20,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    zIndex: 10,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 25,
+    paddingHorizontal: 12,
+    height: 46,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchIcon: {
+    fontSize: 16,
+    marginRight: 8,
+    color: '#666',
+  },
+  searchInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 14,
+    color: '#333',
+  },
+  clearButton: {
+    padding: 4,
+  },
+  clearIcon: {
+    fontSize: 14,
+    color: '#999',
+  },
+  voiceSearchButton: {
+    marginLeft: 6,
+    padding: 4,
+  },
+  voiceSearchButtonActive: {
+    backgroundColor: 'rgba(255, 138, 0, 0.1)',
+    borderRadius: 12,
+  },
+  voiceIcon: {
+    fontSize: 16,
+    color: '#FF8A00',
+  },
+  voiceIconActive: {
+    color: '#FF6000',
+  },
+  suggestionsContainer: {
+    marginTop: 4,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 5,
+    paddingVertical: 6,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  suggestionIcon: {
+    fontSize: 14,
+    color: '#999',
+    marginRight: 10,
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  bannerContainer: {
+    height: 180,
+    marginBottom: 20,
+  },
+  bannerItemContainer: {
+    width: width - 32,
+    height: 180,
+    marginHorizontal: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  bannerImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 10,
+  },
+  bannerTextContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    justifyContent: 'flex-end',
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+  },
+  bannerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  indicatorContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    bottom: 10,
+    left: 0,
+    right: 0,
+  },
+  indicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+    marginHorizontal: 4,
+  },
+  sectionContainer: {
+    marginBottom: 24,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  categoriesContainer: {
+    paddingVertical: 4,
+  },
+  categoryItem: {
+    alignItems: 'center',
+    marginRight: 16,
+    width: 70,
+  },
+  categoryIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FFF5E6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#FFB74D',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  categoryIcon: {
+    fontSize: 30,
+  },
+  categoryName: {
+    fontSize: 12,
+    textAlign: 'center',
+    color: '#333',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  seeAllButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  seeAllText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  topPicksContainer: {
+    paddingVertical: 4,
+    paddingRight: 16,
+  },
+  restaurantCard: {
+    width: width * 0.75,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  restaurantImage: {
+    width: '100%',
+    height: 140,
+  },
+  restaurantInfo: {
+    padding: 12,
+  },
+  restaurantName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  restaurantMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  ratingIcon: {
+    fontSize: 12,
+    marginRight: 2,
+  },
+  ratingText: {
+    fontSize: 12,
+    color: '#333',
+  },
+  cuisineText: {
+    fontSize: 12,
+  },
+  priceRangeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  trendingDishesContainer: {
+    paddingVertical: 8,
+  },
+  dishCard: {
+    width: 160,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dishImage: {
+    width: '100%',
+    height: 120,
+  },
+  dishOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  dishRating: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  dishRatingText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  dishInfo: {
+    padding: 10,
+  },
+  dishName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dishMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dishRestaurant: {
+    fontSize: 12,
+    flex: 1,
+  },
+  dishPrice: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  aiSuggestionCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#FF8A00',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  aiSuggestionGradient: {
+    borderRadius: 16,
+  },
+  aiSuggestionContent: {
+    flexDirection: 'row',
+    padding: 16,
+  },
+  aiSuggestionLeft: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  aiSuggestionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  aiSuggestionSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 16,
+  },
+  aiSuggestionButton: {
+    backgroundColor: '#fff',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  aiSuggestionButtonText: {
+    color: '#FF8A00',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  aiSuggestionRight: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    overflow: 'hidden',
+    marginLeft: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  aiSuggestionImage: {
+    width: '100%',
+    height: '100%',
+  },
+  featuredRestaurantsContainer: {
+    paddingVertical: 8,
+  },
+  featuredRestaurantCard: {
+    width: 240,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  featuredRestaurantImage: {
+    width: '100%',
+    height: 140,
+  },
+  featuredRestaurantOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  featuredRestaurantRating: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  featuredRestaurantRatingText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  featuredRestaurantInfo: {
+    padding: 12,
+  },
+  featuredRestaurantName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  featuredRestaurantMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  featuredRestaurantCuisine: {
+    fontSize: 12,
+    color: '#666',
+  },
+  featuredRestaurantPrice: {
+    fontSize: 12,
+  },
+  notificationCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  notificationContent: {
+    flex: 1,
+  },
+  notificationTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 2,
+  },
+  notificationDescription: {
+    fontSize: 12,
+    color: '#666',
+  },
+  mapPreviewContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    height: 180,
+    marginTop: 8,
+  },
+  mapPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    padding: 12,
+  },
+  mapOverlayText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  listeningOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listeningOverlayBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  listeningContainer: {
+    width: 200,
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,138,0,0.1)',
+  },
+  micWave: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,138,0,0.2)',
+  },
+  listeningMicContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#FF8A00',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    elevation: 8,
+  },
+  listeningMicIcon: {
+    fontSize: 30,
+    color: 'white',
+  },
+  listeningText: {
+    marginTop: 20,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  listeningSubText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  imagePickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    zIndex: 1000,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  imagePickerContainer: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    elevation: 8,
+  },
+  imagePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  imagePickerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  imagePickerClose: {
+    fontSize: 20,
+    color: '#999',
+  },
+  floatingActionButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FF8A00',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: 'rgba(255, 138, 0, 0.5)',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+    zIndex: 999,
+  },
+  fabIcon: {
+    fontSize: 30,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  locationBanner: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  locationText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  permissionDialog: {
+    width: '90%',
+    maxWidth: 340,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
+    shadowOpacity: 0.58,
+    shadowRadius: 16,
+    elevation: 24,
+  },
+  permissionIconContainer: {
+    marginBottom: 20,
+  },
+  permissionIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  permissionIcon: {
+    fontSize: 40,
+  },
+  permissionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  permissionDescription: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  permissionSecondary: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  permissionButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  permissionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  permissionSecondaryButton: {
+    paddingVertical: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  permissionSecondaryButtonText: {
+    fontSize: 14,
+  },
+});
+
+export default HomeScreen; 

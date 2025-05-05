@@ -6,6 +6,9 @@ buildscript {
         targetSdkVersion = 35
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.0.21"
+
+        // Add AndroidX support flags
+        androidXEnabled = true 
     }
     repositories {
         google()
@@ -15,6 +18,35 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    }
+}
+
+// Add a subprojects block to apply consistent configuration across all modules
+subprojects { subproject ->
+    afterEvaluate {
+        if ((subproject.plugins.hasPlugin('android') || subproject.plugins.hasPlugin('android-library')) && 
+            (subproject.name.contains('react-native') || subproject.name.contains('app'))) {
+            android {
+                compileSdkVersion rootProject.ext.compileSdkVersion
+                buildToolsVersion rootProject.ext.buildToolsVersion
+                
+                defaultConfig {
+                    minSdkVersion rootProject.ext.minSdkVersion
+                    targetSdkVersion rootProject.ext.targetSdkVersion
+                }
+            }
+        }
+        
+        // Fix duplicate classes by excluding old support libraries
+        configurations.all {
+            resolutionStrategy {
+                force 'androidx.core:core:1.13.1'
+                
+                // Exclude the conflicting libraries
+                exclude group: 'com.android.support', module: 'support-v4'
+                exclude group: 'com.android.support', module: 'support-compat'
+            }
+        }
     }
 }
 

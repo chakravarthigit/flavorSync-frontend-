@@ -1,0 +1,30 @@
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  FlatList,
+  Dimensions,
+  StatusBar,
+  Platform,
+  SafeAreaView,
+  Alert,
+  PermissionsAndroid,
+  Modal,\r\n  Linking,\r\n  TouchableWithoutFeedback,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSequence,
+  withSpring,
+  withDelay,
+  withRepeat,
+  Easing,
